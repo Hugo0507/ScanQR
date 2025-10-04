@@ -1,4 +1,4 @@
-package com.scanqr
+package com.anonymous.ScanQR
 
 import android.app.Application
 import android.content.res.Configuration

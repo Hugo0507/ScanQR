@@ -2,6 +2,28 @@
   "expo": {
     "name": "ScanQR",
     "slug": "ScanQR",
-    "version": "1.0.0"
+    "version": "1.0.0",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera",
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone",
+          "recordAudioAndroid": true
+        }
+      ]
+    ],
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.ScanQR"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f314c565-eb14-4d42-a36d-bb938f394ca3"
+      }
+    }
   }
 }
