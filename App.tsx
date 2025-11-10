@@ -1,66 +1,81 @@
-import { useState } from 'react';
-import { Alert } from 'react-native';
+import { useState, useEffect } from 'react';
+import { Alert, ActivityIndicator, View, Modal } from 'react-native';
 import LoginScreen from './src/screens/LoginScreen';
-import RegisterScreen from './src/screens/RegisterScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import MainScreen from './src/screens/MainScreen';
-import { Screen, ScannedQR } from './src/types';
+import AttendeeDetailScreen from './src/screens/AttendeeDetailScreen';
+import OperatorManagementScreen from './src/screens/OperatorManagementScreen';
+import DeleteConfirmationModal from './src/components/DeleteConfirmationModal';
+import { Screen, ScannedQR, AttendeeData, UserRole } from './src/types';
+import { authService } from './src/services/authService';
+import type { UserData } from './src/services/authService';
+import { apiService } from './src/services/apiService';
+import type { SearchResult } from './src/types';
+import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 
-export default function App() {
+function AppContent() {
+  const { colors } = useTheme();
   const [currentScreen, setCurrentScreen] = useState<Screen>('login');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Estados de Login/Registro
+  // Estados de Login
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [confirmPassword, setConfirmPassword] = useState<string>('');
-  const [name, setName] = useState<string>('');
+  const [userData, setUserData] = useState<UserData | null>(null);
 
-  // Estados de QR
+  // Estados de QR y Asistentes
   const [scannedQRs, setScannedQRs] = useState<ScannedQR[]>([]);
+  const [currentAttendee, setCurrentAttendee] = useState<AttendeeData | null>(null);
+  const [showAttendeeDetail, setShowAttendeeDetail] = useState<boolean>(false);
 
-  // ===== FUNCIONES DE AUTENTICACIÓN =====
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [operatorManagementVisible, setOperatorManagementVisible] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<string | null>(null);
 
-  function handleLogin() {
-    if (!email || !password) {
-      Alert.alert('Error', 'Por favor completa todos los campos');
-      return;
-    }
+  useEffect(() => {
+    checkAuth();
+  }, []);
 
-    setIsLoggedIn(true);
-    setCurrentScreen('main');
-    Alert.alert('¡Bienvenido!', `Hola ${email.split('@')[0]}`);
-  }
-
-  function handleRegister() {
-    if (!name || !email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Por favor completa todos los campos');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Las contraseñas no coinciden');
-      return;
-    }
-
-    if (password.length < 6) {
-      Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres');
-      return;
-    }
-
-    Alert.alert('¡Registro exitoso!', 'Ahora puedes iniciar sesión', [
-      {
-        text: 'OK',
-        onPress: () => {
-          setCurrentScreen('login');
-          setPassword('');
-          setConfirmPassword('');
+  async function checkAuth() {
+    try {
+      const isAuth = await authService.isAuthenticated();
+      if (isAuth) {
+        const user = await authService.getUserData();
+        if (user) {
+          setUserData(user);
+          setEmail(user.email);
+          setIsLoggedIn(true);
+          setCurrentScreen('main');
         }
       }
-    ]);
+    } catch (error) {
+      console.error('Error checking auth:', error);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  function handleForgotPassword() {
+  async function handleLogin() {
+    try {
+      const user = await authService.login(email, password);
+      await authService.saveAuth(user);
+
+      setUserData(user);
+      setIsLoggedIn(true);
+      setCurrentScreen('main');
+
+      const roleLabel = user.role === 'admin' ? 'Administrador' : 'Operador';
+
+      Alert.alert('Bienvenido', `${user.name}\nRol: ${roleLabel}`);
+    } catch (error) {
+      Alert.alert('Error', 'Credenciales inválidas');
+      throw error;
+    }
+  }
+
+  async function handleForgotPassword() {
     if (!email) {
       Alert.alert('Error', 'Por favor ingresa tu email');
       return;
@@ -78,50 +93,150 @@ export default function App() {
     );
   }
 
-  function handleLogout() {
-    setIsLoggedIn(false);
-    setCurrentScreen('login');
-    setEmail('');
-    setPassword('');
-    setName('');
-    setScannedQRs([]);
-  }
-
-  function resetFields() {
-    setEmail('');
-    setPassword('');
-    setConfirmPassword('');
-    setName('');
+  async function handleLogout() {
+    try {
+      await authService.logout();
+      setIsLoggedIn(false);
+      setCurrentScreen('login');
+      setEmail('');
+      setPassword('');
+      setUserData(null);
+      setScannedQRs([]);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo cerrar sesión');
+    }
   }
 
   function handleNavigate(screen: Screen) {
     setCurrentScreen(screen);
-    if (screen === 'login' || screen === 'register') {
-      resetFields();
+    if (screen === 'login') {
+      setEmail('');
+      setPassword('');
     }
   }
 
-  // ===== FUNCIONES DE QR =====
+  function handleQRScanned(attendeeData: AttendeeData) {
+    setCurrentAttendee(attendeeData);
+    setShowAttendeeDetail(true);
+  }
 
-  function handleQRScanned(data: string) {
-    const newQR: ScannedQR = {
-      id: Date.now().toString(),
-      data: data,
-      timestamp: new Date(),
-    };
+  async function handleConfirmEntry() {
+    if (!currentAttendee || !userData) return;
 
-    setScannedQRs(prevQRs => [newQR, ...prevQRs]);
+    try {
+      // Mark as used in the backend
+      await apiService.markAsUsed(currentAttendee.qrCode, currentAttendee.purchaseId, userData.id);
+
+      const newQR: ScannedQR = {
+        id: Date.now().toString(),
+        qrCode: currentAttendee.qrCode,
+        attendeeName: currentAttendee.attendeeName,
+        totalTickets: currentAttendee.totalTickets,
+        purchaseId: currentAttendee.purchaseId,
+        timestamp: new Date(),
+        status: currentAttendee.status,
+        alreadyScanned: false,
+        scannedBy: userData.id,
+        operatorName: userData.name,
+      };
+
+      setScannedQRs(prevQRs => [newQR, ...prevQRs]);
+      setShowAttendeeDetail(false);
+      setCurrentAttendee(null);
+
+      Alert.alert(
+          'Ingreso confirmado',
+          `${currentAttendee.attendeeName} - ${currentAttendee.totalTickets} ${currentAttendee.totalTickets === 1 ? 'persona' : 'personas'} registradas`,
+          [{ text: 'OK' }]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo registrar el ingreso. Intenta nuevamente.');
+    }
+  }
+
+  function handleCancelEntry() {
+    setShowAttendeeDetail(false);
+    setCurrentAttendee(null);
   }
 
   function handleDeleteQR(id: string) {
-    setScannedQRs(prevQRs => prevQRs.filter(qr => qr.id !== id));
+    setRecordToDelete(id);
+    setDeleteModalVisible(true);
+  }
+
+  async function handleConfirmDelete(password: string): Promise<boolean> {
+    if (!userData || password !== 'admin123' && password !== 'opera123') {
+      return false;
+    }
+
+    if (!recordToDelete) return false;
+
+    setScannedQRs(prevQRs => prevQRs.filter(qr => qr.id !== recordToDelete));
+    setDeleteModalVisible(false);
+    setRecordToDelete(null);
+    return true;
   }
 
   function handleClearAll() {
+    if (!userData || userData.role !== 'admin') {
+      Alert.alert('Permiso denegado', 'Solo los administradores pueden limpiar el historial');
+      return;
+    }
     setScannedQRs([]);
   }
 
-  // ===== RENDERIZADO DE PANTALLAS =====
+  function handleSelectFromSearch(result: SearchResult) {
+    setSearchModalVisible(false);
+
+    if (result.hasEntered) {
+      Alert.alert(
+          'Ya ingresó previamente',
+          `${result.attendeeName} ya registró su entrada al evento.\n\nID: ${result.purchaseId}\nEntradas: ${result.totalTickets}\n\nNo se puede registrar nuevamente.`,
+          [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    const alreadyInHistory = scannedQRs.some(qr =>
+        qr.qrCode === result.qrCode || qr.purchaseId === result.purchaseId
+    );
+
+    if (alreadyInHistory) {
+      Alert.alert(
+          'Ya registrado en esta sesión',
+          `${result.attendeeName} ya fue registrado en esta sesión.\n\nID: ${result.purchaseId}`,
+          [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    const attendeeData: AttendeeData = {
+      qrCode: result.qrCode || '',
+      attendeeName: result.attendeeName,
+      totalTickets: result.totalTickets,
+      purchaseId: result.purchaseId,
+      hasEntered: result.hasEntered,
+    };
+    handleQRScanned(attendeeData); 
+  }
+
+  // Filtrar QRs según rol
+  const filteredQRs = userData && userData.role === 'admin'
+      ? scannedQRs // Admin ve todos
+      : scannedQRs.filter(qr => qr.scannedBy === userData?.id); // Operador solo ve los suyos
+
+  if (isLoading) {
+    return (
+        <View style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: colors.background
+        }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+    );
+  }
 
   if (currentScreen === 'login') {
     return (
@@ -131,23 +246,6 @@ export default function App() {
             onEmailChange={setEmail}
             onPasswordChange={setPassword}
             onLogin={handleLogin}
-            onNavigate={handleNavigate}
-        />
-    );
-  }
-
-  if (currentScreen === 'register') {
-    return (
-        <RegisterScreen
-            name={name}
-            email={email}
-            password={password}
-            confirmPassword={confirmPassword}
-            onNameChange={setName}
-            onEmailChange={setEmail}
-            onPasswordChange={setPassword}
-            onConfirmPasswordChange={setConfirmPassword}
-            onRegister={handleRegister}
             onNavigate={handleNavigate}
         />
     );
@@ -165,13 +263,66 @@ export default function App() {
   }
 
   return (
-      <MainScreen
-          userName={name || email.split('@')[0]}
-          scannedQRs={scannedQRs}
-          onLogout={handleLogout}
-          onQRScanned={handleQRScanned}
-          onDeleteQR={handleDeleteQR}
-          onClearAll={handleClearAll}
-      />
+      <>
+        <MainScreen
+            userName={userData?.name || email.split('@')[0]}
+            userRole={userData?.role || 'operador'}
+            userId={userData?.id || ''}
+            scannedQRs={filteredQRs}
+            onLogout={handleLogout}
+            onQRScanned={handleQRScanned}
+            onDeleteQR={handleDeleteQR}
+            onClearAll={handleClearAll}
+            onOpenOperatorManagement={userData?.role === 'admin' ? () => setOperatorManagementVisible(true) : undefined}
+        />
+
+        {/* Modal de detalles del asistente - Pantalla completa */}
+        <Modal
+            visible={showAttendeeDetail}
+            animationType="slide"
+            presentationStyle="fullScreen"
+        >
+          {currentAttendee && (
+              <AttendeeDetailScreen
+                  attendeeData={currentAttendee}
+                  onConfirm={handleConfirmEntry}
+                  onCancel={handleCancelEntry}
+              />
+          )}
+        </Modal>
+
+        {/* Modal de gestión de operadores (Admin only) */}
+        {userData?.role === 'admin' && (
+          <Modal
+              visible={operatorManagementVisible}
+              animationType="slide"
+              presentationStyle="fullScreen"
+          >
+            <OperatorManagementScreen
+                onClose={() => setOperatorManagementVisible(false)}
+                currentUserPassword={password}
+            />
+          </Modal>
+        )}
+
+        {/* Modal de confirmación de eliminación */}
+        <DeleteConfirmationModal
+            visible={deleteModalVisible}
+            onConfirm={handleConfirmDelete}
+            onCancel={() => {
+              setDeleteModalVisible(false);
+              setRecordToDelete(null);
+            }}
+            itemDescription="registro"
+        />
+      </>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }

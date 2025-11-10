@@ -97,20 +97,6 @@ android {
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
-
-    // Deshabilitar lint para evitar errores en build
-    lint {
-        abortOnError false
-        checkReleaseBuilds false
-    }
-
-    // Deshabilitar tests unitarios
-    testOptions {
-        unitTests.all {
-            enabled = false
-        }
-    }
-
     signingConfigs {
         debug {
             storeFile file('debug.keystore')

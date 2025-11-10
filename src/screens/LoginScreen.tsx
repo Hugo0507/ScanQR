@@ -1,14 +1,15 @@
-import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { colors, commonStyles } from '../styles/theme';
 import { Screen } from '../types';
+import { isValidEmail } from '../utils/validation';
 
 interface LoginScreenProps {
     email: string;
     password: string;
     onEmailChange: (email: string) => void;
     onPasswordChange: (password: string) => void;
-    onLogin: () => void;
+    onLogin: () => Promise<void>;
     onNavigate: (screen: Screen) => void;
 }
 
@@ -20,6 +21,59 @@ export default function LoginScreen({
                                         onLogin,
                                         onNavigate,
                                     }: LoginScreenProps) {
+    const [emailError, setEmailError] = useState<string>('');
+    const [passwordError, setPasswordError] = useState<string>('');
+    const [isLoading, setIsLoading] = useState<boolean>(false);
+
+    function validateEmail(value: string) {
+        onEmailChange(value);
+        if (value && !isValidEmail(value)) {
+            setEmailError('Ingresa un email válido');
+        } else {
+            setEmailError('');
+        }
+    }
+
+    function validatePassword(value: string) {
+        onPasswordChange(value);
+        if (value && value.length < 6) {
+            setPasswordError('Mínimo 6 caracteres');
+        } else {
+            setPasswordError('');
+        }
+    }
+
+    async function handleLogin() {
+        let hasError = false;
+
+        if (!email) {
+            setEmailError('El email es requerido');
+            hasError = true;
+        } else if (!isValidEmail(email)) {
+            setEmailError('Ingresa un email válido');
+            hasError = true;
+        }
+
+        if (!password) {
+            setPasswordError('La contraseña es requerida');
+            hasError = true;
+        } else if (password.length < 6) {
+            setPasswordError('Mínimo 6 caracteres');
+            hasError = true;
+        }
+
+        if (hasError) return;
+
+        setIsLoading(true);
+        try {
+            await onLogin();
+        } catch (error) {
+            Alert.alert('Error', 'No se pudo iniciar sesión');
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -31,59 +85,68 @@ export default function LoginScreen({
                         <View style={styles.logoCircle}>
                             <Text style={styles.logoText}>QR</Text>
                         </View>
-                        <Text style={styles.appTitle}>Scanner</Text>
-                        <Text style={styles.appSubtitle}>Escanea códigos QR fácilmente</Text>
+                        <Text style={styles.appTitle}>Event Check-in</Text>
+                        <Text style={styles.appSubtitle}>Control de acceso a eventos</Text>
                     </View>
 
                     <View style={styles.inputContainer}>
                         <TextInput
-                            style={commonStyles.input}
+                            style={[
+                                commonStyles.input,
+                                emailError ? styles.inputError : null
+                            ]}
                             placeholder="Email"
                             placeholderTextColor={colors.textTertiary}
                             value={email}
-                            onChangeText={onEmailChange}
+                            onChangeText={validateEmail}
                             keyboardType="email-address"
                             autoCapitalize="none"
+                            editable={!isLoading}
                         />
+                        {emailError ? (
+                            <Text style={styles.errorText}>{emailError}</Text>
+                        ) : null}
 
                         <TextInput
-                            style={commonStyles.input}
+                            style={[
+                                commonStyles.input,
+                                passwordError ? styles.inputError : null
+                            ]}
                             placeholder="Contraseña"
                             placeholderTextColor={colors.textTertiary}
                             value={password}
-                            onChangeText={onPasswordChange}
+                            onChangeText={validatePassword}
                             secureTextEntry
                             autoCapitalize="none"
+                            editable={!isLoading}
                         />
+                        {passwordError ? (
+                            <Text style={styles.errorText}>{passwordError}</Text>
+                        ) : null}
                     </View>
 
                     <TouchableOpacity
-                        style={commonStyles.button}
-                        onPress={onLogin}
+                        style={[
+                            commonStyles.button,
+                            isLoading && styles.buttonDisabled
+                        ]}
+                        onPress={handleLogin}
                         activeOpacity={0.8}
+                        disabled={isLoading}
                     >
-                        <Text style={commonStyles.buttonText}>Iniciar Sesión</Text>
+                        {isLoading ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={commonStyles.buttonText}>Iniciar Sesión</Text>
+                        )}
                     </TouchableOpacity>
 
                     <TouchableOpacity
                         style={styles.forgotPassword}
                         onPress={() => onNavigate('forgotPassword')}
+                        disabled={isLoading}
                     >
                         <Text style={styles.forgotPasswordText}>¿Olvidaste tu contraseña?</Text>
-                    </TouchableOpacity>
-
-                    <View style={styles.divider}>
-                        <View style={styles.dividerLine} />
-                        <Text style={styles.dividerText}>o</Text>
-                        <View style={styles.dividerLine} />
-                    </View>
-
-                    <TouchableOpacity
-                        style={styles.registerButton}
-                        onPress={() => onNavigate('register')}
-                        activeOpacity={0.8}
-                    >
-                        <Text style={styles.registerButtonText}>Crear cuenta nueva</Text>
                     </TouchableOpacity>
                 </View>
             </ScrollView>
@@ -133,40 +196,26 @@ const styles = StyleSheet.create({
     inputContainer: {
         marginBottom: 24,
     },
+    inputError: {
+        borderColor: colors.danger,
+        borderWidth: 2,
+    },
+    errorText: {
+        color: colors.danger,
+        fontSize: 12,
+        marginTop: -12,
+        marginBottom: 8,
+        marginLeft: 4,
+    },
     forgotPassword: {
         alignItems: 'center',
-        marginBottom: 16,
+        marginTop: 16,
     },
     forgotPasswordText: {
         color: colors.primary,
         fontSize: 14,
     },
-    divider: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: 20,
-    },
-    dividerLine: {
-        flex: 1,
-        height: 1,
-        backgroundColor: colors.border,
-    },
-    dividerText: {
-        marginHorizontal: 16,
-        color: colors.textTertiary,
-        fontSize: 14,
-    },
-    registerButton: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 16,
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: colors.primary,
-    },
-    registerButtonText: {
-        color: colors.primary,
-        fontSize: 16,
-        fontWeight: '600',
+    buttonDisabled: {
+        opacity: 0.6,
     },
 });
