@@ -1,7 +1,7 @@
 import { AttendeeData, SearchResult } from '../types';
 import { authService } from './authService';
 
-const API_BASE_URL = 'http://54.84.230.208:8000/api';
+const API_BASE_URL = 'https://qr.asimetria.ai/api';
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
     const token = await authService.getToken();
