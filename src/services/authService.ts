@@ -59,10 +59,10 @@ export const authService = {
     // Login con backend real
     async login(email: string, password: string): Promise<UserData> {
         try {
-            console.log('🔐 Attempting login to:', 'http://54.84.230.208:8000/api/auth/login/');
+            console.log('🔐 Attempting login to:', 'https://qr.asimetria.ai/api/auth/login/');
             console.log('📧 Username:', email);
 
-            const response = await fetch('http://54.84.230.208:8000/api/auth/login/', {
+            const response = await fetch('https://qr.asimetria.ai/api/auth/login/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
